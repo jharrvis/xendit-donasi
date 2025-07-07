@@ -1,0 +1,104 @@
+.wp-xendit-donation-form-container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.wp-xendit-donation-form .form-row {
+    margin-bottom: 15px;
+}
+
+.wp-xendit-donation-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.wp-xendit-donation-form input[type="text"],
+.wp-xendit-donation-form input[type="email"],
+.wp-xendit-donation-form input[type="tel"],
+.wp-xendit-donation-form input[type="number"],
+.wp-xendit-donation-form textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.wp-xendit-donation-form .suggested-amounts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.wp-xendit-donation-form .amount-option {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    flex: 1;
+    min-width: 100px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.wp-xendit-donation-form .amount-option:hover,
+.wp-xendit-donation-form .amount-option.selected {
+    background: #4CAF50;
+    color: white;
+    border-color: #4CAF50;
+}
+
+.wp-xendit-donation-form .custom-amount {
+    background: #f1f1f1;
+}
+
+.wp-xendit-donation-form .min-amount-note {
+    font-size: 12px;
+    color: #777;
+    margin-top: 5px;
+}
+
+.wp-xendit-donation-form .donation-submit-button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    width: 100%;
+    transition: background 0.3s;
+}
+
+.wp-xendit-donation-form .donation-submit-button:hover {
+    background: #45a049;
+}
+
+.wp-xendit-donation-form .donation-message {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.wp-xendit-donation-form .donation-message.success {
+    background: #dff0d8;
+    border: 1px solid #d6e9c6;
+    color: #3c763d;
+}
+
+.wp-xendit-donation-form .donation-message.error {
+    background: #f2dede;
+    border: 1px solid #ebccd1;
+    color: #a94442;
+}
+
+.wp-xendit-donation-form .donation-message.loading {
+    background: #fcf8e3;
+    border: 1px solid #faebcc;
+    color: #8a6d3b;
+}

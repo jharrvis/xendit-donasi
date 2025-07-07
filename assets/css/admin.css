@@ -1,0 +1,47 @@
+.xendit-donation-info {
+    margin-top: 30px;
+    background: #fff;
+    padding: 20px;
+    border-left: 4px solid #00a0d2;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+
+.xendit-donation-info h2 {
+    margin-top: 0;
+}
+
+.xendit-donation-info ol {
+    margin-left: 20px;
+}
+
+.xendit-donation-info code {
+    background: #f1f1f1;
+    padding: 3px 5px;
+    border-radius: 3px;
+}
+
+.wp-list-table .column-amount {
+    width: 100px;
+}
+
+.wp-list-table .column-status {
+    width: 100px;
+}
+
+.wp-list-table .column-created_at {
+    width: 150px;
+}
+
+.wp-list-table .status-paid {
+    color: green;
+    font-weight: bold;
+}
+
+.wp-list-table .status-pending {
+    color: orange;
+}
+
+.wp-list-table .status-expired,
+.wp-list-table .status-failed {
+    color: red;
+}
