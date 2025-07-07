@@ -138,7 +138,7 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
     }
     
     /**
-     * Render kolom nama donatur
+     * Render kolom nama donatur dengan actions yang diperbaiki
      */
     public function column_donor_name($item) {
         $actions = array(
@@ -153,8 +153,9 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
         );
         
         return sprintf(
-            '%1$s %2$s',
-            $item['donor_name'],
+            '<strong><a href="%s">%s</a></strong> %s',
+            admin_url('admin.php?page=wp-xendit-donation-donations&action=view&id=' . $item['id']),
+            esc_html($item['donor_name']),
             $this->row_actions($actions)
         );
     }
@@ -172,8 +173,8 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
     public function column_status($item) {
         $status_labels = array(
             'pending' => 'Pending',
-            'PAID' => 'Sukses',
-            'EXPIRED' => 'Expired',
+            'PAID' => 'Berhasil',
+            'EXPIRED' => 'Kedaluwarsa',
             'FAILED' => 'Gagal'
         );
         
@@ -194,15 +195,30 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
     }
     
     /**
+     * Render kolom pesan dengan truncate
+     */
+    public function column_message($item) {
+        if (empty($item['message'])) {
+            return '-';
+        }
+        
+        $message = esc_html($item['message']);
+        if (strlen($message) > 50) {
+            return substr($message, 0, 50) . '...';
+        }
+        
+        return $message;
+    }
+    
+    /**
      * Render kolom default
      */
     public function column_default($item, $column_name) {
         switch ($column_name) {
             case 'donor_email':
-            case 'message':
-                return $item[$column_name];
+                return '<a href="mailto:' . esc_attr($item[$column_name]) . '">' . esc_html($item[$column_name]) . '</a>';
             default:
-                return print_r($item, true);
+                return isset($item[$column_name]) ? esc_html($item[$column_name]) : '';
         }
     }
     
@@ -238,7 +254,7 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
                 foreach ($donation_ids as $id) {
                     $wpdb->delete(
                         $table_name,
-                        array('id' => $id),
+                        array('id' => intval($id)),
                         array('%d')
                     );
                 }
@@ -246,28 +262,6 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
                 wp_redirect(admin_url('admin.php?page=wp-xendit-donation-donations&message=deleted'));
                 exit;
             }
-        }
-        
-        // Proses single delete
-        if ('delete' === $this->current_action()) {
-            $nonce = isset($_REQUEST['_wpnonce']) ? $_REQUEST['_wpnonce'] : '';
-            $id = isset($_REQUEST['id']) ? absint($_REQUEST['id']) : 0;
-            
-            if (!wp_verify_nonce($nonce, 'delete_donation')) {
-                die('Nonce verification failed');
-            }
-            
-            global $wpdb;
-            $table_name = $wpdb->prefix . 'xendit_donations';
-            
-            $wpdb->delete(
-                $table_name,
-                array('id' => $id),
-                array('%d')
-            );
-            
-            wp_redirect(admin_url('admin.php?page=wp-xendit-donation-donations&message=deleted'));
-            exit;
         }
     }
     
@@ -285,8 +279,8 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
             <select name="status">
                 <option value="">Semua Status</option>
                 <option value="pending" <?php selected($status, 'pending'); ?>>Pending</option>
-                <option value="PAID" <?php selected($status, 'PAID'); ?>>Sukses</option>
-                <option value="EXPIRED" <?php selected($status, 'EXPIRED'); ?>>Expired</option>
+                <option value="PAID" <?php selected($status, 'PAID'); ?>>Berhasil</option>
+                <option value="EXPIRED" <?php selected($status, 'EXPIRED'); ?>>Kedaluwarsa</option>
                 <option value="FAILED" <?php selected($status, 'FAILED'); ?>>Gagal</option>
             </select>
             <?php submit_button('Filter', '', 'filter_action', false); ?>
@@ -303,8 +297,20 @@ class WP_Xendit_Donation_List_Table extends WP_List_Table {
         $per_page = 20;
         $current_page = $this->get_pagenum();
         
-        $orderby = isset($_REQUEST['orderby']) ? $_REQUEST['orderby'] : 'created_at';
-        $order = isset($_REQUEST['order']) ? $_REQUEST['order'] : 'DESC';
+        $orderby = isset($_REQUEST['orderby']) ? sanitize_text_field($_REQUEST['orderby']) : 'created_at';
+        $order = isset($_REQUEST['order']) ? sanitize_text_field($_REQUEST['order']) : 'DESC';
+        
+        // Sanitize orderby
+        $allowed_orderby = array('donor_name', 'donor_email', 'amount', 'status', 'created_at');
+        if (!in_array($orderby, $allowed_orderby)) {
+            $orderby = 'created_at';
+        }
+        
+        // Sanitize order
+        $order = strtoupper($order);
+        if (!in_array($order, array('ASC', 'DESC'))) {
+            $order = 'DESC';
+        }
         
         $this->_column_headers = array(
             $this->get_columns(),

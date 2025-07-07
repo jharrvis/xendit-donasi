@@ -37,26 +37,27 @@ class WP_Xendit_Donation_Form {
      */
     public function enqueue_scripts() {
         $js_file = WP_XENDIT_DONATION_PLUGIN_URL . 'assets/js/script.js';
+        $currency_js = WP_XENDIT_DONATION_PLUGIN_URL . 'assets/js/currency-converter.js';
+        
         if (file_exists(WP_XENDIT_DONATION_PLUGIN_DIR . 'assets/js/script.js')) {
             wp_enqueue_script($this->plugin_name, $js_file, array('jquery'), $this->version, false);
-            
-            wp_localize_script($this->plugin_name, 'wp_xendit_donation', array(
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('wp_xendit_donation_nonce')
-            ));
         }
-    }
-
-    /**
-     * Mendaftarkan endpoint REST API untuk callback Xendit
-     */
-    public function register_endpoints() {
-        // Daftarkan REST route dengan cara yang lebih aman
-        add_action('rest_api_init', array($this, 'register_rest_routes'));
         
-        // Tambahkan endpoint AJAX untuk form submission
+        if (file_exists(WP_XENDIT_DONATION_PLUGIN_DIR . 'assets/js/currency-converter.js')) {
+            wp_enqueue_script($this->plugin_name . '-currency', $currency_js, array('jquery'), $this->version, false);
+        }
+
+        // Localize script dengan data yang diperlukan
+        wp_localize_script($this->plugin_name, 'wp_xendit_donation', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('wp_xendit_donation_nonce')
+        ));
+
+        // Register AJAX handlers
         add_action('wp_ajax_submit_donation', array($this, 'handle_form_submission'));
         add_action('wp_ajax_nopriv_submit_donation', array($this, 'handle_form_submission'));
+        add_action('wp_ajax_get_exchange_rate', array($this, 'get_current_exchange_rate'));
+        add_action('wp_ajax_nopriv_get_exchange_rate', array($this, 'get_current_exchange_rate'));
     }
 
     /**
@@ -97,6 +98,23 @@ class WP_Xendit_Donation_Form {
     }
 
     /**
+     * Get current exchange rate via AJAX
+     */
+    public function get_current_exchange_rate() {
+        if (!wp_verify_nonce($_POST['nonce'], 'wp_xendit_donation_nonce')) {
+            wp_send_json_error(array('message' => 'Invalid nonce'));
+            return;
+        }
+
+        $rate = WP_Xendit_Currency_Converter::get_exchange_rate('USD', 'IDR');
+        
+        wp_send_json_success(array(
+            'rate' => $rate,
+            'formatted' => WP_Xendit_Currency_Converter::format_currency($rate, 'IDR')
+        ));
+    }
+
+    /**
      * Menangani submission form donasi
      */
     public function handle_form_submission() {
@@ -118,11 +136,34 @@ class WP_Xendit_Donation_Form {
             $donation_data[$field] = sanitize_text_field($_POST[$field]);
         }
 
-        // Validasi jumlah donasi
-        $minimum_amount = intval(get_option('wp_xendit_donation_minimum_amount', 10000));
-        if (intval($donation_data['amount']) < $minimum_amount) {
-            wp_send_json_error(array('message' => 'Jumlah donasi minimal Rp ' . number_format($minimum_amount, 0, ',', '.')));
+        // Handle currency
+        $currency = isset($_POST['selected_currency']) ? sanitize_text_field($_POST['selected_currency']) : 'IDR';
+        if (!WP_Xendit_Currency_Converter::is_supported_currency($currency)) {
+            wp_send_json_error(array('message' => 'Mata uang tidak didukung'));
             return;
+        }
+
+        $donation_data['currency'] = $currency;
+        $donation_data['original_amount'] = floatval($donation_data['amount']);
+
+        // Validasi jumlah donasi berdasarkan mata uang
+        $minimum_amount = WP_Xendit_Currency_Converter::get_minimum_amount($currency);
+        if (floatval($donation_data['amount']) < $minimum_amount) {
+            $min_formatted = WP_Xendit_Currency_Converter::format_currency($minimum_amount, $currency);
+            wp_send_json_error(array('message' => 'Jumlah donasi minimal ' . $min_formatted));
+            return;
+        }
+
+        // Konversi ke IDR jika diperlukan
+        if ($currency === 'USD') {
+            $exchange_rate = WP_Xendit_Currency_Converter::get_exchange_rate('USD', 'IDR');
+            $donation_data['exchange_rate'] = $exchange_rate;
+            $donation_data['amount'] = WP_Xendit_Currency_Converter::convert($donation_data['original_amount'], 'USD', 'IDR');
+            
+            // Pastikan amount dalam IDR (yang dikirim ke Xendit) adalah integer
+            $donation_data['amount'] = round($donation_data['amount']);
+        } else {
+            $donation_data['exchange_rate'] = 1;
         }
 
         // Tambahkan field opsional
@@ -144,10 +185,18 @@ class WP_Xendit_Donation_Form {
                 return;
             }
 
+            // Success message dengan informasi konversi jika perlu
+            $success_message = 'Donasi berhasil dibuat, Anda akan dialihkan ke halaman pembayaran';
+            if ($currency === 'USD') {
+                $original_formatted = WP_Xendit_Currency_Converter::format_currency($donation_data['original_amount'], 'USD');
+                $converted_formatted = WP_Xendit_Currency_Converter::format_currency($donation_data['amount'], 'IDR');
+                $success_message .= '. Donasi ' . $original_formatted . ' telah dikonversi menjadi ' . $converted_formatted;
+            }
+
             // Kirim URL invoice untuk redirect
             wp_send_json_success(array(
                 'invoice_url' => $response['invoice_url'],
-                'message' => 'Donasi berhasil dibuat, Anda akan dialihkan ke halaman pembayaran'
+                'message' => $success_message
             ));
         } else {
             wp_send_json_error(array('message' => 'Xendit API class tidak tersedia'));
@@ -189,20 +238,22 @@ class WP_Xendit_Donation_Form {
             
         } catch (Exception $e) {
             error_log('WP Xendit Donation Callback Error: ' . $e->getMessage());
-            return new WP_Error('callback_error', 'Terjadi kesalahan dalam memproses callback', array('status' => 500));
+            return new WP_Error('callback_error', 'Internal error', array('status' => 500));
         }
     }
 
     /**
-     * Kirim email notifikasi donasi berhasil
+     * Mengirim notifikasi email donasi dengan informasi mata uang
      */
     private function send_donation_notification($external_id) {
         global $wpdb;
+        
         $table_name = $wpdb->prefix . 'xendit_donations';
         
-        $donation = $wpdb->get_row(
-            $wpdb->prepare("SELECT * FROM $table_name WHERE external_id = %s", $external_id)
-        );
+        $donation = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE external_id = %s",
+            $external_id
+        ));
         
         if (!$donation) {
             return;
@@ -210,12 +261,20 @@ class WP_Xendit_Donation_Form {
         
         // Kirim email ke admin
         $admin_email = get_option('admin_email');
-        $subject = '[' . get_bloginfo('name') . '] Donasi Baru Diterima';
+        $subject = 'Donasi Baru Diterima - ' . get_bloginfo('name');
         
         $message = "Donasi baru telah diterima:\n\n";
         $message .= "Nama: " . $donation->donor_name . "\n";
         $message .= "Email: " . $donation->donor_email . "\n";
-        $message .= "Jumlah: Rp " . number_format($donation->amount, 0, ',', '.') . "\n";
+        
+        // Format amount berdasarkan currency
+        if ($donation->currency === 'USD' && $donation->original_amount) {
+            $message .= "Jumlah: " . WP_Xendit_Currency_Converter::format_currency($donation->original_amount, 'USD');
+            $message .= " (Rp " . number_format($donation->amount, 0, ',', '.') . ")\n";
+            $message .= "Kurs: 1 USD = Rp " . number_format($donation->exchange_rate, 0, ',', '.') . "\n";
+        } else {
+            $message .= "Jumlah: Rp " . number_format($donation->amount, 0, ',', '.') . "\n";
+        }
         
         if (!empty($donation->message)) {
             $message .= "Pesan: " . $donation->message . "\n";
@@ -229,8 +288,16 @@ class WP_Xendit_Donation_Form {
         $donor_subject = 'Terima Kasih Atas Donasi Anda - ' . get_bloginfo('name');
         
         $donor_message = "Halo " . $donation->donor_name . ",\n\n";
-        $donor_message .= "Terima kasih atas donasi Anda sebesar Rp " . number_format($donation->amount, 0, ',', '.') . ".\n";
-        $donor_message .= "Donasi Anda sangat berarti bagi kami.\n\n";
+        $donor_message .= "Terima kasih atas donasi Anda ";
+        
+        if ($donation->currency === 'USD' && $donation->original_amount) {
+            $donor_message .= "sebesar " . WP_Xendit_Currency_Converter::format_currency($donation->original_amount, 'USD');
+            $donor_message .= " (setara Rp " . number_format($donation->amount, 0, ',', '.') . ")";
+        } else {
+            $donor_message .= "sebesar Rp " . number_format($donation->amount, 0, ',', '.');
+        }
+        
+        $donor_message .= ".\nDonasi Anda sangat berarti bagi kami.\n\n";
         $donor_message .= "Salam,\n";
         $donor_message .= get_bloginfo('name');
         
